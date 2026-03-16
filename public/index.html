@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>GazeMap</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0f;--surface:#14141a;--surface2:#1c1c25;
+  --b1:rgba(255,255,255,.08);--b2:rgba(255,255,255,.14);
+  --text:#e2e2ee;--muted:#5a5a70;
+  --green:#00e5a0;--red:#ff4466;--yellow:#ffc93c;--blue:#4d9fff;
+  --mono:'IBM Plex Mono',monospace;--display:'Bebas Neue',sans-serif;
+  --panel:260px;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--mono)}
+
+/* ── LAYOUT ─────────────────────────────────────────── */
+#app{
+  display:grid;
+  grid-template-columns:var(--panel) 1fr;
+  grid-template-rows:48px 1fr;
+  height:100vh;
+  width:100vw;
+}
+
+/* ── TOPBAR ─────────────────────────────────────────── */
+#topbar{
+  grid-column:1/-1;
+  display:flex;align-items:center;gap:10px;
+  padding:0 14px;
+  background:var(--surface2);
+  border-bottom:1px solid var(--b2);
+  z-index:100;
+}
+#topbar .logo{font-family:var(--display);font-size:1.3rem;letter-spacing:3px;color:var(--text);white-space:nowrap}
+#topbar .logo span{color:var(--green)}
+#url-form{flex:1;display:flex;gap:6px;min-width:0}
+#url-input{
+  flex:1;
+  background:var(--bg);border:1px solid var(--b2);border-radius:4px;
+  color:var(--text);font-family:var(--mono);font-size:11px;
+  padding:5px 10px;outline:none;min-width:0;
+}
+#url-input:focus{border-color:var(--green)}
+#url-input::placeholder{color:var(--muted)}
+#btn-load{
+  background:var(--green);color:#000;border:none;border-radius:4px;
+  padding:5px 14px;font-family:var(--mono);font-size:11px;font-weight:600;
+  letter-spacing:1px;cursor:pointer;text-transform:uppercase;white-space:nowrap;
+}
+#btn-load:hover{opacity:.85}
+.tb-sep{width:1px;height:24px;background:var(--b2)}
+
+/* ── SIDE PANEL ─────────────────────────────────────── */
+#panel{
+  grid-column:1;grid-row:2;
+  background:var(--surface);
+  border-right:1px solid var(--b2);
+  display:flex;flex-direction:column;
+  overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:var(--b2) transparent;
+  z-index:50;
+}
+.ps{padding:12px;display:flex;flex-direction:column;gap:11px}
+
+/* status */
+.sbar{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border-radius:4px;border:1px solid var(--b1)}
+.sled{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.sled.ready{background:var(--green);box-shadow:0 0 8px var(--green)}
+.sled.live{background:var(--green);box-shadow:0 0 8px var(--green);animation:lp .9s infinite}
+.sled.cal{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}
+.sled.paused{background:var(--blue);box-shadow:0 0 6px var(--blue)}
+.sled.err{background:var(--red)}
+@keyframes lp{50%{opacity:.2}}
+#sbar-txt{font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;flex:1;line-height:1.3}
+#sbar-fps{font-size:10px;color:var(--muted)}
+
+.sec{font-size:9px;letter-spacing:2.5px;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+.mtabs{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+.mtab{padding:7px 4px;background:var(--bg);border:1px solid var(--b1);border-radius:3px;color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;text-align:center;transition:all .15s}
+.mtab:hover{border-color:var(--b2);color:var(--text)}
+.mtab.on{background:var(--green);color:#000;border-color:var(--green);font-weight:600}
+
+.ctrl{display:flex;flex-direction:column;gap:5px}
+.crow{display:flex;justify-content:space-between;align-items:center}
+.crow>span:first-child{font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+.cval{font-size:10px;color:var(--text);background:var(--bg);padding:2px 6px;border-radius:3px;min-width:34px;text-align:right}
+input[type=range]{-webkit-appearance:none;width:100%;height:2px;background:var(--b2);border-radius:1px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--green);transition:transform .12s}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.4)}
+
+.swatches{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.sw{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .12s,border-color .12s}
+.sw:hover{transform:scale(1.2)}.sw.on{border-color:#fff;transform:scale(1.1)}
+.sw-pick{width:20px;height:20px;border-radius:50%;border:2px dashed var(--b2);cursor:pointer;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted)}
+.sw-pick input{position:absolute;opacity:0;width:100%;height:100%;cursor:pointer}
+
+.brow{display:flex;gap:6px}
+.btn{flex:1;padding:9px 6px;background:var(--bg);border:1px solid var(--b2);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.btn:hover{border-color:var(--green);color:var(--green)}
+.btn.acc{background:var(--green);color:#000;border-color:var(--green);font-weight:600}
+.btn.acc:hover{opacity:.85}
+.btn.danger:hover{border-color:var(--red);color:var(--red)}
+.btn.on{background:rgba(255,68,102,.12);border-color:var(--red);color:var(--red)}
+
+.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.scard{background:var(--bg);border-radius:4px;border:1px solid var(--b1);padding:7px 6px;text-align:center}
+.sv{display:block;font-family:var(--display);font-size:1.5rem;line-height:1.1;color:var(--green)}
+.sk{display:block;font-size:9px;letter-spacing:1.5px;color:var(--muted);margin-top:2px}
+
+#heat-ctrls{display:none}#heat-ctrls.show{display:flex;flex-direction:column;gap:11px}
+
+.exp-hint{font-size:9px;color:var(--muted);text-align:center;line-height:1.6;border-top:1px solid var(--b1);padding-top:8px}
+
+.section-title{
+  font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;
+  border-top:1px solid var(--b1);padding-top:10px;
+}
+
+/* ── VIEWER AREA ─────────────────────────────────────── */
+#viewer{
+  grid-column:2;grid-row:2;
+  position:relative;
+  overflow:hidden;
+  background:#1a1a1f;
+}
+
+/* The iframe that shows the target page */
+#site-frame{
+  position:absolute;
+  top:0;left:0;
+  width:100%;height:100%;
+  border:none;
+  z-index:1;
+}
+
+/*
+  THE KEY ARCHITECTURE:
+  Canvas is position:absolute, same size as the page content (not just viewport).
+  Strokes are drawn in document coordinates (gaze + scrollY).
+  On scroll, the canvas scrolls with the iframe content.
+  We use a wrapper div that matches iframe scroll.
+*/
+#canvas-wrapper{
+  position:absolute;
+  top:0;left:0;
+  width:100%;
+  /* height set dynamically to match page content height */
+  pointer-events:none;
+  z-index:10;
+  overflow:hidden;
+}
+
+#gaze-canvas{
+  position:absolute;
+  top:0;left:0;
+  /* width/height set dynamically */
+  pointer-events:none;
+}
+
+/* Live cursor */
+#cursor{
+  position:absolute;
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid rgba(0,229,160,.9);
+  transform:translate(-50%,-50%);
+  pointer-events:none;z-index:20;
+  opacity:0;transition:opacity .2s;
+  box-shadow:0 0 8px rgba(0,229,160,.4);
+}
+#cursor.show{opacity:1}
+
+/* ── CALIBRATION ─────────────────────────────────────── */
+#screen-cal{
+  position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9000;display:none
+}
+#screen-cal.active{display:block}
+#cal-target{
+  position:absolute;width:28px;height:28px;border-radius:50%;
+  background:var(--green);cursor:crosshair;
+  transform:translate(-50%,-50%);z-index:2;
+  animation:dpulse 1.3s infinite;
+}
+@keyframes dpulse{
+  0%{box-shadow:0 0 0 0 rgba(0,229,160,.7)}
+  70%{box-shadow:0 0 0 18px rgba(0,229,160,0)}
+  100%{box-shadow:0 0 0 0 rgba(0,229,160,0)}
+}
+#cal-ring-svg{
+  position:absolute;width:64px;height:64px;
+  transform:translate(-50%,-50%) rotate(-90deg);
+  pointer-events:none;z-index:1;
+  transition:left .32s cubic-bezier(.4,0,.2,1),top .32s cubic-bezier(.4,0,.2,1);
+}
+#cal-arc{fill:none;stroke:var(--green);stroke-width:2.5;stroke-dasharray:144;stroke-dashoffset:144;stroke-linecap:round;transition:stroke-dashoffset .12s ease}
+#cal-hud{
+  position:fixed;bottom:36px;left:50%;transform:translateX(-50%);
+  background:var(--surface);border:1px solid var(--b2);
+  border-radius:8px;padding:18px 28px;text-align:center;min-width:300px;
+  pointer-events:none;z-index:9100;
+}
+.cal-title{display:block;font-family:var(--display);font-size:1.3rem;letter-spacing:3px;color:var(--green);margin-bottom:4px}
+.cal-sub{color:var(--muted);font-size:11px;margin-bottom:10px}
+#cal-inds{display:flex;gap:4px;justify-content:center;margin-bottom:8px}
+.ci{width:8px;height:8px;border-radius:50%;background:var(--b2);transition:background .2s}
+.ci.done{background:var(--green)}.ci.cur{background:var(--yellow)}
+#cal-info{font-size:11px;color:var(--muted)}
+
+#cal-result{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:var(--surface);border:1px solid var(--b2);
+  border-radius:10px;padding:36px 48px;text-align:center;z-index:9200;display:none;
+}
+#cal-result.show{display:block}
+#cal-result h2{font-family:var(--display);font-size:1.8rem;letter-spacing:2px;margin-bottom:8px}
+#cal-result p{color:var(--muted);font-size:11px;margin-bottom:18px}
+#cal-score{font-family:var(--display);font-size:4rem;color:var(--green);display:block;margin-bottom:4px}
+.cprimary{display:block;width:100%;background:var(--green);color:#000;border:none;padding:11px 0;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:2px;cursor:pointer;border-radius:4px;text-transform:uppercase;margin-bottom:8px}
+.csecondary{display:block;width:100%;background:transparent;color:var(--muted);border:1px solid var(--b2);padding:9px 0;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:4px;text-transform:uppercase}
+
+/* ── PERMISSION ───────────────────────────────────────── */
+#screen-perm{
+  position:fixed;inset:0;background:var(--bg);z-index:9999;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:20px;text-align:center;padding:40px;
+}
+#screen-perm h1{font-family:var(--display);font-size:3rem;letter-spacing:3px}
+#screen-perm p{color:var(--muted);max-width:440px;line-height:1.8;font-size:12px}
+.warn-box{color:var(--yellow);font-size:11px;border:1px solid rgba(255,201,60,.25);padding:8px 16px;border-radius:4px;background:rgba(255,201,60,.05);max-width:440px}
+#btn-cam{background:var(--green);color:#000;border:none;padding:14px 36px;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:2px;cursor:pointer;border-radius:4px;text-transform:uppercase}
+#btn-cam:hover{opacity:.85}
+#perm-msg{font-size:11px;color:var(--muted);min-height:18px}
+
+/* ── LOADING OVERLAY ─────────────────────────────────── */
+#loading-overlay{
+  position:absolute;inset:0;z-index:5;
+  background:var(--bg);
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;
+}
+#loading-overlay.hidden{display:none}
+.spinner{
+  width:32px;height:32px;border-radius:50%;
+  border:2px solid var(--b2);
+  border-top-color:var(--green);
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading-msg{font-size:12px;color:var(--muted)}
+
+/* WebGazer cam */
+#webgazerVideoContainer{position:fixed !important;bottom:16px !important;right:16px !important;top:auto !important;left:auto !important;width:140px !important;height:105px !important;border:1px solid var(--b2) !important;border-radius:6px !important;overflow:hidden !important;z-index:8100 !important;opacity:.6 !important;transition:opacity .2s !important}
+#webgazerVideoContainer:hover{opacity:1 !important}
+#webgazerVideoFeed{width:100% !important;height:100% !important;object-fit:cover !important}
+#webgazerFaceOverlay,#webgazerFaceFeedbackBox{display:none !important}
+
+/* Toast */
+#toasts{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:5px;align-items:center;pointer-events:none;z-index:99999}
+.toast{background:var(--surface2);border:1px solid var(--b2);padding:8px 16px;border-radius:6px;font-size:11px;animation:tin .25s ease,tout .3s ease 2.7s forwards;white-space:nowrap}
+.toast.ok{border-color:var(--green);color:var(--green)}
+.toast.err{border-color:var(--red);color:var(--red)}
+.toast.info{border-color:var(--yellow);color:var(--yellow)}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes tout{from{opacity:1}to{opacity:0;transform:translateY(-6px)}}
+
+/* Export progress modal */
+#export-modal{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:var(--surface);border:1px solid var(--b2);
+  border-radius:10px;padding:32px 48px;text-align:center;
+  z-index:99998;display:none;min-width:280px;
+}
+#export-modal.show{display:block}
+#export-modal h3{font-family:var(--display);font-size:1.5rem;letter-spacing:2px;margin-bottom:12px}
+#export-bar{height:4px;background:var(--b2);border-radius:2px;overflow:hidden;margin-bottom:10px}
+#export-fill{height:100%;background:var(--green);width:0%;transition:width .2s;box-shadow:0 0 8px var(--green)}
+#export-msg{font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<!-- PERMISSION -->
+<div id="screen-perm">
+  <div style="font-size:60px">◉</div>
+  <h1>GAZE MAP</h1>
+  <p>Load any website, track your eye movement as strokes over the full scrollable page. Export the full-length overlay as PNG.</p>
+  <p class="warn-box">⚠ Camera required. No video stored or sent anywhere. All processing is local.</p>
+  <button id="btn-cam">Enable Camera →</button>
+  <div id="perm-msg"></div>
+</div>
+
+<!-- CALIBRATION -->
+<div id="screen-cal">
+  <div id="cal-target"></div>
+  <svg id="cal-ring-svg" viewBox="0 0 64 64">
+    <circle id="cal-arc" cx="32" cy="32" r="24"/>
+  </svg>
+  <div id="cal-hud">
+    <span class="cal-title">CALIBRATION</span>
+    <div class="cal-sub">Look at the dot — click it <strong style="color:var(--text)">3 times</strong></div>
+    <div id="cal-inds"></div>
+    <div id="cal-info">—</div>
+  </div>
+  <div id="cal-result">
+    <h2>CALIBRATED</h2>
+    <p>9-point calibration complete</p>
+    <span id="cal-score">✓</span>
+    <button class="cprimary" id="btn-cal-start">Start Tracking</button>
+    <button class="csecondary" id="btn-cal-retry">Recalibrate</button>
+  </div>
+</div>
+
+<!-- EXPORT PROGRESS -->
+<div id="export-modal">
+  <h3>EXPORTING</h3>
+  <div id="export-bar"><div id="export-fill"></div></div>
+  <div id="export-msg">Preparing canvas…</div>
+</div>
+
+<!-- MAIN APP GRID -->
+<div id="app">
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="logo">◉ <span>GAZE</span>MAP</div>
+    <div class="tb-sep"></div>
+    <form id="url-form">
+      <input id="url-input" type="text" placeholder="https://example.com — load any site or tool" autocomplete="off" spellcheck="false"/>
+      <button id="btn-load" type="submit">Load →</button>
+    </form>
+    <div class="tb-sep"></div>
+  </div>
+
+  <!-- SIDE PANEL -->
+  <div id="panel">
+    <div class="ps">
+
+      <div class="sbar">
+        <div class="sled" id="sled"></div>
+        <span id="sbar-txt">Enable camera to begin</span>
+        <span id="sbar-fps"></span>
+      </div>
+
+      <div>
+        <div class="sec">Mode</div>
+        <div class="mtabs">
+          <button class="mtab on" data-mode="stroke">Stroke</button>
+          <button class="mtab"    data-mode="heatmap">Heat</button>
+          <button class="mtab"    data-mode="dots">Dots</button>
+        </div>
+      </div>
+
+      <div id="stroke-ctrls">
+        <div class="sec">Brush</div>
+        <div class="ctrl">
+          <div class="crow"><span>Size</span><span class="cval" id="v-size">20px</span></div>
+          <input type="range" id="r-size" min="4" max="80" value="20">
+        </div>
+        <div class="ctrl">
+          <div class="crow"><span>Opacity</span><span class="cval" id="v-op">35%</span></div>
+          <input type="range" id="r-op" min="5" max="100" value="35">
+        </div>
+        <div>
+          <div class="sec" style="margin-bottom:7px">Colour</div>
+          <div class="swatches">
+            <div class="sw on" data-c="#00e5a0" style="background:#00e5a0"></div>
+            <div class="sw"    data-c="#ff4466" style="background:#ff4466"></div>
+            <div class="sw"    data-c="#ffc93c" style="background:#ffc93c"></div>
+            <div class="sw"    data-c="#4d9fff" style="background:#4d9fff"></div>
+            <div class="sw"    data-c="#cc66ff" style="background:#cc66ff"></div>
+            <div class="sw"    data-c="#ffffff" style="background:#fff"></div>
+            <div class="sw-pick">+<input type="color" id="c-pick" value="#00e5a0"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="heat-ctrls">
+        <div class="sec">Heatmap</div>
+        <div class="ctrl">
+          <div class="crow"><span>Radius</span><span class="cval" id="v-hr">30</span></div>
+          <input type="range" id="r-hr" min="10" max="100" value="30">
+        </div>
+        <div class="ctrl">
+          <div class="crow"><span>Blur</span><span class="cval" id="v-hb">20</span></div>
+          <input type="range" id="r-hb" min="5" max="60" value="20">
+        </div>
+      </div>
+
+      <div class="ctrl">
+        <div class="crow"><span>Smooth</span><span class="cval" id="v-sm">7</span></div>
+        <input type="range" id="r-sm" min="1" max="30" value="7">
+      </div>
+
+      <div class="brow">
+        <button class="btn acc" id="btn-play">▶ Start</button>
+        <button class="btn" id="btn-recal">⊕ Recal</button>
+      </div>
+      <div class="brow">
+        <button class="btn danger" id="btn-clear">✕ Clear</button>
+        <button class="btn acc" id="btn-export">↓ Export</button>
+      </div>
+
+      <div class="exp-hint">
+        Left-click → transparent overlay PNG<br>
+        Right-click → white background PNG<br>
+        Export = full page height, all strokes
+      </div>
+
+      <div class="sgrid">
+        <div class="scard"><span class="sv" id="sv-pts">0</span><span class="sk">Points</span></div>
+        <div class="scard"><span class="sv" id="sv-fps">0</span><span class="sk">FPS</span></div>
+        <div class="scard"><span class="sv" id="sv-t">0s</span><span class="sk">Time</span></div>
+      </div>
+
+      <div>
+        <div class="section-title" style="margin-bottom:8px">Scroll depth</div>
+        <div class="scard" style="text-align:left;padding:8px 10px">
+          <span style="font-size:10px;color:var(--muted)">Page height</span>
+          <span class="sv" id="sv-ph" style="font-size:1.1rem">—</span>
+          <span style="font-size:10px;color:var(--muted)">Scroll Y</span>
+          <span class="sv" id="sv-sy" style="font-size:1.1rem">0px</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- VIEWER -->
+  <div id="viewer">
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div id="loading-msg">Load a URL above to begin</div>
+    </div>
+
+    <iframe id="site-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" allow="camera; microphone"></iframe>
+
+    <div id="canvas-wrapper">
+      <canvas id="gaze-canvas"></canvas>
+    </div>
+
+    <div id="cursor"></div>
+  </div>
+
+</div>
+
+<div id="toasts"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/simpleheat/0.4.0/simpleheat.min.js"></script>
+<script src="https://unpkg.com/webgazer@2.1.0/dist/webgazer.min.js" crossorigin="anonymous"></script>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════
+   STATE
+═══════════════════════════════════════ */
+const S = {
+  phase:'perm', mode:'stroke', color:'#00e5a0',
+  size:20, alpha:0.35, hR:30, hB:20, sm:7,
+
+  // Points stored in DOCUMENT coordinates (x, y + scrollOffset)
+  pts:[], hData:[], smBuf:[], lastPt:null, pending:null,
+
+  nPts:0, fpsC:0, fps:0, fpsT:0, t0:null, rafId:null,
+
+  // Iframe/page state
+  pageH:   window.innerHeight,  // full document height of iframe content
+  pageW:   window.innerWidth,
+  scrollY: 0,   // current scroll of the iframe content
+  scrollX: 0,
+
+  // Calibration
+  CAL_POS:[], calI:0, calC:0, CAL_N:3,
+};
+
+/* ═══════════════════════════════════════
+   CANVAS
+   Canvas is absolute, full-page-height.
+   All draws are in document coords (CSS px).
+═══════════════════════════════════════ */
+const canvas  = document.getElementById('gaze-canvas');
+const ctx     = canvas.getContext('2d');
+const wrapper = document.getElementById('canvas-wrapper');
+const viewer  = document.getElementById('viewer');
+let DPR = window.devicePixelRatio || 1;
+
+function resizeCanvas(w, h){
+  DPR = window.devicePixelRatio || 1;
+  const pw = w || viewer.clientWidth;
+  const ph = h || viewer.clientHeight;
+  canvas.width  = Math.round(pw * DPR);
+  canvas.height = Math.round(ph * DPR);
+  canvas.style.width  = pw + 'px';
+  canvas.style.height = ph + 'px';
+  wrapper.style.width  = pw + 'px';
+  wrapper.style.height = ph + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resizeCanvas();
+
+function clearCanvas(){
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.restore();
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+/* ═══════════════════════════════════════
+   SCROLL SYNC
+   The canvas wrapper scrolls with the iframe.
+   We intercept postMessage from the iframe to
+   get its scroll position.
+═══════════════════════════════════════ */
+window.addEventListener('message', (e) => {
+  if(!e.data || typeof e.data !== 'object') return;
+
+  if(e.data.type === 'gazeSize'){
+    const h = Math.max(e.data.h, viewer.clientHeight);
+    const w = Math.max(e.data.w, viewer.clientWidth);
+    if(h !== S.pageH || w !== S.pageW){
+      S.pageH = h; S.pageW = w;
+      resizeCanvas(w, h);
+      if(S.mode === 'heatmap' && S.hData.length) renderHeat();
+      document.getElementById('sv-ph').textContent = Math.round(h) + 'px';
+    }
+  }
+
+  if(e.data.type === 'gazeScroll'){
+    S.scrollY = e.data.y || 0;
+    S.scrollX = e.data.x || 0;
+    document.getElementById('sv-sy').textContent = Math.round(S.scrollY) + 'px';
+    // Translate the canvas wrapper to follow the scroll
+    // canvas-wrapper is absolute so we offset it
+    wrapper.style.transform = `translate(${-S.scrollX}px, ${-S.scrollY}px)`;
+  }
+});
+
+/* ═══════════════════════════════════════
+   SMOOTH
+═══════════════════════════════════════ */
+function smooth(x, y){
+  S.smBuf.push({x,y});
+  if(S.smBuf.length > S.sm) S.smBuf.shift();
+  let sx=0,sy=0;
+  for(const p of S.smBuf){sx+=p.x;sy+=p.y;}
+  return {x:sx/S.smBuf.length, y:sy/S.smBuf.length};
+}
+
+/* ═══════════════════════════════════════
+   DRAW — document coords
+   Gaze comes in viewport coords from WebGazer.
+   We convert to document coords by adding scrollY.
+   The canvas is full-height document space.
+   The ctx transform means we draw in CSS px.
+═══════════════════════════════════════ */
+
+// Convert viewport gaze to document coords
+function viewportToDoc(vx, vy){
+  const vr = viewer.getBoundingClientRect();
+  // Gaze x,y are in page (window) coordinates from WebGazer
+  // Subtract viewer offset to get viewer-local coords
+  const lx = vx - vr.left;
+  const ly = vy - vr.top;
+  // Add scroll to get document coords within the iframe
+  return { x: lx + S.scrollX, y: ly + S.scrollY };
+}
+
+function hexRgba(hex,a){
+  return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`;
+}
+
+function drawStroke(p, prev){
+  ctx.save();
+  if(prev && Math.hypot(p.x-prev.x,p.y-prev.y)<350){
+    ctx.beginPath();
+    ctx.moveTo(prev.x,prev.y);
+    ctx.lineTo(p.x,p.y);
+    ctx.strokeStyle=S.color;
+    ctx.lineWidth=S.size;
+    ctx.lineCap='round';
+    ctx.lineJoin='round';
+    ctx.globalAlpha=S.alpha;
+    ctx.globalCompositeOperation='source-over';
+    ctx.stroke();
+  }
+  const gr=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,S.size*1.6);
+  gr.addColorStop(0,hexRgba(S.color,S.alpha*.85));
+  gr.addColorStop(1,hexRgba(S.color,0));
+  ctx.globalAlpha=1;ctx.fillStyle=gr;
+  ctx.beginPath();ctx.arc(p.x,p.y,S.size*1.6,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawDot(p){
+  ctx.save();
+  ctx.globalAlpha=S.alpha;ctx.fillStyle=S.color;
+  ctx.beginPath();ctx.arc(p.x,p.y,S.size*.5,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+let heatDirty=false;
+function scheduleHeat(){
+  if(heatDirty)return;heatDirty=true;
+  requestAnimationFrame(()=>{heatDirty=false;renderHeat();});
+}
+function renderHeat(){
+  const w=Math.round(S.pageW),h=Math.round(S.pageH);
+  if(w<=0||h<=0)return;
+  const off=document.createElement('canvas');
+  off.width=w;off.height=h;
+  const heat=simpleheat(off);
+  heat.radius(S.hR,S.hB);
+  heat.gradient({0.15:'#0000cc',0.4:'#00e5a0',0.6:'#ffc93c',0.8:'#ff6600',1:'#ff2244'});
+  heat.data(S.hData);
+  heat.draw(0.04);
+  clearCanvas();
+  ctx.save();ctx.setTransform(1,0,0,1,0,0);
+  ctx.drawImage(off,0,0,w*DPR,h*DPR);
+  ctx.restore();ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+function redrawAll(){
+  if(S.mode==='heatmap'){if(S.hData.length)renderHeat();return;}
+  clearCanvas();
+  for(let i=1;i<S.pts.length;i++){
+    if(S.mode==='stroke')drawStroke(S.pts[i],S.pts[i-1]);
+    else drawDot(S.pts[i]);
+  }
+}
+
+/* ═══════════════════════════════════════
+   RAF LOOP
+═══════════════════════════════════════ */
+function rafLoop(){
+  S.rafId=requestAnimationFrame(rafLoop);
+  if(S.phase!=='tracking')return;
+  const raw=S.pending;if(!raw)return;
+  S.pending=null;
+
+  // Raw gaze is in window coords. Convert to doc coords.
+  const doc = viewportToDoc(raw.x, raw.y);
+
+  // Bounds check (document space)
+  const vr = viewer.getBoundingClientRect();
+  const lx = raw.x - vr.left;
+  const ly = raw.y - vr.top;
+  if(lx<-50||lx>vr.width+50||ly<-50||ly>vr.height+50) return;
+
+  const p=smooth(doc.x, doc.y);
+
+  // Live cursor — in viewport coords (relative to viewer)
+  const cur=document.getElementById('cursor');
+  cur.style.left=lx+'px';
+  cur.style.top=ly+'px';
+
+  // Draw in document coords
+  if(S.mode==='stroke')       drawStroke(p,S.lastPt);
+  else if(S.mode==='dots')    drawDot(p);
+  else if(S.mode==='heatmap'){S.hData.push([p.x,p.y,1]);if(S.hData.length%4===0)scheduleHeat();}
+
+  S.pts.push(p);S.lastPt=p;S.nPts++;
+  S.fpsC++;
+  const now=Date.now();
+  if(now-S.fpsT>=1000){S.fps=S.fpsC;S.fpsC=0;S.fpsT=now;}
+}
+function startRaf(){if(!S.rafId)rafLoop();}
+
+/* ═══════════════════════════════════════
+   WEBGAZER
+═══════════════════════════════════════ */
+async function initWebGazer(){
+  S.phase='loading';setStatus('cal','Loading model…');
+  toast('Loading eye tracking model…','info');
+  try{
+    await webgazer
+      .setRegression('ridge').setTracker('TFFacemesh')
+      .setGazeListener(d=>{if(d)S.pending={x:d.x,y:d.y};})
+      .begin();
+    webgazer.showPredictionPoints(false);
+    webgazer.showVideo(true);
+    webgazer.showFaceOverlay(false);
+    webgazer.showFaceFeedbackBox(false);
+    toast('Model ready','ok');
+    setTimeout(startCalibration,500);
+  }catch(err){
+    console.error(err);S.phase='perm';setStatus('err','Error');
+    document.getElementById('screen-perm').style.display='flex';
+    document.getElementById('perm-msg').textContent='✗ '+(err.message||err);
+    toast('Camera error: '+(err.message||err),'err');
+  }
+}
+
+/* ═══════════════════════════════════════
+   CALIBRATION
+═══════════════════════════════════════ */
+function buildCalPos(){
+  const m=80,w=window.innerWidth,h=window.innerHeight;
+  S.CAL_POS=[
+    {x:m,y:m},{x:w/2,y:m},{x:w-m,y:m},
+    {x:m,y:h/2},{x:w/2,y:h/2},{x:w-m,y:h/2},
+    {x:m,y:h-m},{x:w/2,y:h-m},{x:w-m,y:h-m},
+  ];
+}
+function startCalibration(){
+  buildCalPos();S.calI=0;S.calC=0;
+  const inds=document.getElementById('cal-inds');
+  inds.innerHTML='';
+  S.CAL_POS.forEach((_,i)=>{
+    const d=document.createElement('div');
+    d.className='ci';d.id='ci'+i;inds.appendChild(d);
+  });
+  S.phase='cal';setStatus('cal','Calibrating');
+  document.getElementById('screen-cal').classList.add('active');
+  moveCalDot(S.CAL_POS[0]);updateCalUI();
+  document.getElementById('cal-target').removeEventListener('click',onCalClick);
+  document.getElementById('cal-target').addEventListener('click',onCalClick);
+}
+function moveCalDot(pos){
+  const t=document.getElementById('cal-target');
+  const r=document.getElementById('cal-ring-svg');
+  t.style.left=pos.x+'px';t.style.top=pos.y+'px';
+  r.style.left=pos.x+'px';r.style.top=pos.y+'px';
+}
+function updateCalUI(){
+  const total=S.CAL_POS.length,rem=S.CAL_N-S.calC;
+  document.getElementById('cal-info').textContent=`Point ${S.calI+1}/${total} — click ${rem} more time${rem===1?'':'s'}`;
+  for(let i=0;i<total;i++){
+    const el=document.getElementById('ci'+i);
+    if(el)el.className='ci'+(i<S.calI?' done':i===S.calI?' cur':'');
+  }
+  document.getElementById('cal-arc').style.strokeDashoffset=144*(1-S.calC/S.CAL_N);
+}
+function onCalClick(){
+  // NO stopPropagation — WebGazer's document listener MUST fire
+  const pos=S.CAL_POS[S.calI];
+  try{if(webgazer.recordScreenPosition)webgazer.recordScreenPosition(pos.x,pos.y,'click');}catch(_){}
+  S.calC++;updateCalUI();
+  if(S.calC>=S.CAL_N){
+    S.calI++;S.calC=0;
+    if(S.calI>=S.CAL_POS.length){
+      document.getElementById('cal-target').removeEventListener('click',onCalClick);
+      setTimeout(()=>document.getElementById('cal-result').classList.add('show'),350);
+    }else{
+      setTimeout(()=>{moveCalDot(S.CAL_POS[S.calI]);updateCalUI();},260);
+    }
+  }
+}
+
+/* ═══════════════════════════════════════
+   EXPORT — full document height canvas
+   
+   We export the entire canvas (which is pageH tall).
+   The canvas already has all strokes accumulated
+   in document space — we just call toDataURL on it.
+   
+   Optionally composite with a page screenshot using
+   html2canvas on the iframe content (same-origin via proxy).
+═══════════════════════════════════════ */
+async function exportOverlay(withBg){
+  if(S.nPts===0){toast('Nothing to export — track first','info');return;}
+
+  const modal=document.getElementById('export-modal');
+  const fill=document.getElementById('export-fill');
+  const msg=document.getElementById('export-msg');
+  modal.classList.add('show');
+  fill.style.width='0%';msg.textContent='Preparing canvas…';
+
+  try{
+    await new Promise(r=>setTimeout(r,50));
+    fill.style.width='30%';msg.textContent='Encoding canvas…';
+
+    let finalCanvas;
+
+    if(withBg){
+      fill.style.width='50%';msg.textContent='Building composite…';
+      // Create a white-bg composite
+      const tmp=document.createElement('canvas');
+      tmp.width=canvas.width;tmp.height=canvas.height;
+      const tc=tmp.getContext('2d');
+      tc.fillStyle='#ffffff';tc.fillRect(0,0,tmp.width,tmp.height);
+      tc.drawImage(canvas,0,0);
+      finalCanvas=tmp;
+    }else{
+      finalCanvas=canvas;
+    }
+
+    fill.style.width='80%';msg.textContent='Generating PNG…';
+    await new Promise(r=>setTimeout(r,50));
+
+    const url=finalCanvas.toDataURL('image/png');
+    fill.style.width='100%';msg.textContent='Done!';
+
+    await new Promise(r=>setTimeout(r,400));
+
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='gaze-'+(withBg?'white':'overlay')+'-'+Date.now()+'.png';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+
+    toast((withBg?'White-bg':'Transparent')+' PNG exported ✓ ('+(S.pageH|0)+'px tall)','ok');
+  }catch(e){
+    toast('Export error: '+e.message,'err');console.error(e);
+  }finally{
+    setTimeout(()=>modal.classList.remove('show'),600);
+  }
+}
+
+/* ═══════════════════════════════════════
+   URL LOADER
+═══════════════════════════════════════ */
+function loadUrl(rawUrl){
+  if(!rawUrl) return;
+  let u=rawUrl.trim();
+  if(!/^https?:\/\//i.test(u)) u='https://'+u;
+
+  const loading=document.getElementById('loading-overlay');
+  const frame=document.getElementById('site-frame');
+  const msg=document.getElementById('loading-msg');
+
+  loading.classList.remove('hidden');
+  msg.textContent='Loading '+u+' …';
+
+  // Route through our proxy to strip X-Frame-Options
+  const proxied='/proxy?url='+encodeURIComponent(u);
+  frame.src=proxied;
+
+  frame.onload=()=>{
+    loading.classList.add('hidden');
+    // Reset scroll state
+    S.scrollY=0;S.scrollX=0;
+    wrapper.style.transform='';
+    toast('Page loaded','ok');
+    document.getElementById('sv-ph').textContent='Measuring…';
+  };
+  frame.onerror=()=>{
+    loading.classList.remove('hidden');
+    msg.textContent='Failed to load (check proxy server is running)';
+  };
+}
+
+/* ═══════════════════════════════════════
+   STATUS / UTIL
+═══════════════════════════════════════ */
+function setStatus(cls,txt){
+  document.getElementById('sled').className='sled '+cls;
+  document.getElementById('sbar-txt').textContent=txt;
+}
+function toast(msg,type='info'){
+  const tc=document.getElementById('toasts');
+  const t=document.createElement('div');
+  t.className='toast '+type;t.textContent=msg;
+  tc.appendChild(t);setTimeout(()=>t.remove(),3400);
+}
+
+/* ═══════════════════════════════════════
+   STATS LOOP
+═══════════════════════════════════════ */
+setInterval(()=>{
+  document.getElementById('sv-pts').textContent=S.nPts>999?(S.nPts/1000).toFixed(1)+'k':S.nPts;
+  document.getElementById('sv-fps').textContent=S.fps;
+  document.getElementById('sbar-fps').textContent=S.phase==='tracking'?S.fps+'fps':'';
+  const s=S.t0?Math.round((Date.now()-S.t0)/1000):0;
+  document.getElementById('sv-t').textContent=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';
+},500);
+
+/* ═══════════════════════════════════════
+   WIRING
+═══════════════════════════════════════ */
+document.getElementById('btn-cam').addEventListener('click',()=>{
+  document.getElementById('screen-perm').style.display='none';
+  initWebGazer();
+});
+
+document.getElementById('btn-cal-start').addEventListener('click',()=>{
+  document.getElementById('cal-result').classList.remove('show');
+  document.getElementById('screen-cal').classList.remove('active');
+  S.phase='ready';setStatus('ready','Ready — click ▶ Start');
+  startRaf();toast('Ready','ok');
+});
+document.getElementById('btn-cal-retry').addEventListener('click',()=>{
+  document.getElementById('cal-result').classList.remove('show');
+  startCalibration();
+});
+
+document.getElementById('url-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  loadUrl(document.getElementById('url-input').value);
+});
+
+document.querySelectorAll('.mtab').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.mtab').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');S.mode=btn.dataset.mode;
+    document.getElementById('heat-ctrls').classList.toggle('show',S.mode==='heatmap');
+    document.getElementById('stroke-ctrls').style.display=S.mode==='heatmap'?'none':'';
+    S.lastPt=null;S.smBuf=[];redrawAll();
+  });
+});
+
+function wire(rid,vid,key,xf,fmt){
+  const el=document.getElementById(rid),vl=document.getElementById(vid);
+  el.addEventListener('input',()=>{
+    const v=xf?xf(+el.value):+el.value;
+    S[key]=v;vl.textContent=fmt?fmt(v,el.value):v;
+  });
+}
+wire('r-size','v-size','size',null,v=>v+'px');
+wire('r-op','v-op','alpha',v=>v/100,(v,r)=>r+'%');
+wire('r-hr','v-hr','hR',null,null);
+wire('r-hb','v-hb','hB',null,null);
+wire('r-sm','v-sm','sm',null,null);
+
+document.querySelectorAll('.sw').forEach(s=>{
+  s.addEventListener('click',()=>{
+    document.querySelectorAll('.sw').forEach(x=>x.classList.remove('on'));
+    s.classList.add('on');S.color=s.dataset.c;
+  });
+});
+document.getElementById('c-pick').addEventListener('input',e=>{
+  document.querySelectorAll('.sw').forEach(x=>x.classList.remove('on'));
+  S.color=e.target.value;
+});
+
+document.getElementById('btn-play').addEventListener('click',()=>{
+  const btn=document.getElementById('btn-play');
+  if(['perm','loading','cal'].includes(S.phase))return;
+  if(S.phase==='ready'||S.phase==='paused'){
+    S.phase='tracking';S.t0=S.t0||Date.now();S.fpsT=Date.now();
+    btn.textContent='⏸ Pause';btn.classList.add('on');
+    document.getElementById('cursor').classList.add('show');
+    setStatus('live','Tracking');toast('Tracking live','ok');
+  }else if(S.phase==='tracking'){
+    S.phase='paused';
+    btn.textContent='▶ Resume';btn.classList.remove('on');
+    document.getElementById('cursor').classList.remove('show');
+    setStatus('paused','Paused');
+  }
+});
+
+document.getElementById('btn-recal').addEventListener('click',()=>{
+  if(['perm','loading'].includes(S.phase))return;
+  document.getElementById('btn-play').textContent='▶ Start';
+  document.getElementById('btn-play').classList.remove('on');
+  document.getElementById('cursor').classList.remove('show');
+  startCalibration();
+});
+
+document.getElementById('btn-clear').addEventListener('click',()=>{
+  clearCanvas();S.pts=[];S.hData=[];S.lastPt=null;S.smBuf=[];S.nPts=0;S.t0=null;
+  toast('Canvas cleared','info');
+});
+
+document.getElementById('btn-export').addEventListener('click',()=>exportOverlay(false));
+document.getElementById('btn-export').addEventListener('contextmenu',e=>{e.preventDefault();exportOverlay(true);});
+
+window.addEventListener('resize',()=>{resizeCanvas();redrawAll();});
+
+// Load a default page on start
+setTimeout(()=>{
+  const input=document.getElementById('url-input');
+  input.value='https://news.ycombinator.com';
+},100);
+</script>
+</body>
+</html>
